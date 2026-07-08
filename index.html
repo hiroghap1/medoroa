@@ -161,7 +161,7 @@
     <div class="bar"><div class="fill"></div></div>
   </div>
   <div class="gauge" id="gaugeFuse">
-    <div class="label">⚡ 融合</div>
+    <div class="label" id="fuseLabel">⚡ 融合</div>
     <div class="bar"><div class="fill"></div></div>
   </div>
   <div class="gauge" id="gaugeFire">
@@ -177,7 +177,8 @@
     <li><b>①</b> <span class="fire-t"><b>右手を開く</b></span> → メラゾーマをチャージ 🔥</li>
     <li><b>②</b> <span class="ice-t"><b>左手を開く</b></span> → マヒャドをチャージ ❄️</li>
     <li><b>③</b> <b>両手を合わせる</b> → 炎と氷を融合 ⚡</li>
-    <li><b>④</b> <b>勢いよく突き出す</b> → <b>発射！！</b></li>
+    <li><b>④</b> <b>両手をグーにして片手を引く</b> → 光の弓矢を引き絞る 🏹</li>
+    <li><b>⑤</b> <b>引いた手をパーに開く</b> → <b>発射！！</b></li>
   </ol>
   <button id="startBtn">カメラを起動して詠唱開始</button>
   <div class="note">
@@ -204,6 +205,7 @@ const errorEl = document.getElementById("error");
 const fillFire = document.querySelector("#gaugeFire .fill");
 const fillIce  = document.querySelector("#gaugeIce .fill");
 const fillFuse = document.querySelector("#gaugeFuse .fill");
+const fuseLabel = document.getElementById("fuseLabel");
 
 let cw = 0, ch = 0, dpr = 1;
 function resize() {
@@ -288,7 +290,7 @@ const SFX = {
     this.fuseOsc1.start(); this.fuseOsc2.start();
   },
 
-  update(fire, ice, fusion, ready, now) {
+  update(fire, ice, fusion, ready, now, draw = 0) {
     if (!this.ctx) return;
     const t = this.ctx.currentTime;
     // 炎はゆらぎを加えてパチパチ感を出す
@@ -297,7 +299,7 @@ const SFX = {
     let fg = fusion * 0.16;
     if (ready) fg *= 1 + 0.35 * Math.sin(now * 22);
     this.fuseGain.gain.setTargetAtTime(fg, t, 0.05);
-    const f = 130 + fusion * 620;
+    const f = 130 + fusion * 620 + draw * 520; // 引き絞るほど音が張り詰める
     this.fuseOsc1.frequency.setTargetAtTime(f, t, 0.08);
     this.fuseOsc2.frequency.setTargetAtTime(f * 1.505, t, 0.08);
     // 氷チャージ中はキラキラ音を散らす
@@ -333,38 +335,38 @@ const SFX = {
   blast() {
     if (!this.ctx) return;
     const t = this.ctx.currentTime;
-    // 轟音ノイズ
-    const src = this.ctx.createBufferSource();
-    src.buffer = this.noiseBuf; src.loop = true;
+    // 「バッ」：鋭い破裂アタック
+    const atk = this.ctx.createBufferSource();
+    atk.buffer = this.noiseBuf; atk.loop = true;
+    const atkLP = this.ctx.createBiquadFilter();
+    atkLP.type = "lowpass"; atkLP.frequency.value = 5500;
+    const atkG = this.ctx.createGain();
+    atkG.gain.setValueAtTime(1.1, t);
+    atkG.gain.exponentialRampToValueAtTime(0.0001, t + 0.13);
+    atk.connect(atkLP).connect(atkG).connect(this.master);
+    atk.start(t); atk.stop(t + 0.15);
+    // 「シューッ」：高圧の噴出ノイズ（徐々にこもりながら減衰）
+    const hiss = this.ctx.createBufferSource();
+    hiss.buffer = this.noiseBuf; hiss.loop = true;
+    const hp = this.ctx.createBiquadFilter();
+    hp.type = "highpass"; hp.frequency.value = 1000;
     const lp = this.ctx.createBiquadFilter();
     lp.type = "lowpass";
-    lp.frequency.setValueAtTime(9000, t);
-    lp.frequency.exponentialRampToValueAtTime(180, t + 1.4);
-    const g = this.ctx.createGain();
-    g.gain.setValueAtTime(0.85, t);
-    g.gain.exponentialRampToValueAtTime(0.0001, t + 1.6);
-    src.connect(lp).connect(g).connect(this.master);
-    src.start(t); src.stop(t + 1.7);
-    // 重低音
-    const sub = this.ctx.createOscillator();
-    sub.type = "sine";
-    sub.frequency.setValueAtTime(85, t);
-    sub.frequency.exponentialRampToValueAtTime(32, t + 1.1);
-    const sg = this.ctx.createGain();
-    sg.gain.setValueAtTime(0.7, t);
-    sg.gain.exponentialRampToValueAtTime(0.0001, t + 1.3);
-    sub.connect(sg).connect(this.master);
-    sub.start(t); sub.stop(t + 1.4);
-    // アタック
-    const crk = this.ctx.createOscillator();
-    crk.type = "square";
-    crk.frequency.setValueAtTime(420, t);
-    crk.frequency.exponentialRampToValueAtTime(55, t + 0.16);
-    const cg = this.ctx.createGain();
-    cg.gain.setValueAtTime(0.4, t);
-    cg.gain.exponentialRampToValueAtTime(0.0001, t + 0.22);
-    crk.connect(cg).connect(this.master);
-    crk.start(t); crk.stop(t + 0.25);
+    lp.frequency.setValueAtTime(10000, t);
+    lp.frequency.exponentialRampToValueAtTime(2000, t + 0.9);
+    const hg = this.ctx.createGain();
+    hg.gain.setValueAtTime(0.9, t);
+    hg.gain.setTargetAtTime(0.0001, t + 0.12, 0.22);
+    hiss.connect(hp).connect(lp).connect(hg).connect(this.master);
+    hiss.start(t); hiss.stop(t + 1.1);
+    // ごく短い低音の衝撃（周波数固定＝うなり音を出さない）
+    const thud = this.ctx.createOscillator();
+    thud.type = "sine"; thud.frequency.value = 62;
+    const tg = this.ctx.createGain();
+    tg.gain.setValueAtTime(0.5, t);
+    tg.gain.exponentialRampToValueAtTime(0.0001, t + 0.2);
+    thud.connect(tg).connect(this.master);
+    thud.start(t); thud.stop(t + 0.22);
   },
 };
 
@@ -412,13 +414,37 @@ function spawnFuse(x, y, scale, level, amount) {
     const r = scale * (1.6 + Math.random() * 1.4) * (1.2 - level * 0.5);
     const px = x + Math.cos(a) * r, py = y + Math.sin(a) * r;
     spawn({
-      kind: Math.random() < 0.5 ? "fuseF" : "fuseI",
+      kind: S.fake ? "gira" : (Math.random() < 0.5 ? "fuseF" : "fuseI"),
       x: px, y: py,
       vx: (x - px) * 3.2, vy: (y - py) * 3.2, // 中心に収束
       life: 0, max: 0.3,
       size: scale * (0.06 + Math.random() * 0.1),
     });
   }
+}
+function spawnGira(x, y, scale, amount) {
+  for (let i = 0; i < amount; i++) {
+    const a = Math.random() * Math.PI * 2;
+    const r = Math.random() * scale * 0.8;
+    spawn({
+      kind: "gira",
+      x: x + Math.cos(a) * r, y: y + Math.sin(a) * r,
+      vx: (Math.random() - 0.5) * 80,
+      vy: (Math.random() - 0.5) * 80,
+      life: 0, max: 0.3 + Math.random() * 0.3,
+      size: scale * (0.08 + Math.random() * 0.1),
+    });
+  }
+}
+function spawnSmoke(x, y, size) {
+  spawn({
+    kind: "smoke",
+    x, y,
+    vx: (Math.random() - 0.5) * 50,
+    vy: (Math.random() - 0.5) * 50 - 12,
+    life: 0, max: 0.7 + Math.random() * 0.7,
+    size: size * (0.7 + Math.random() * 0.6),
+  });
 }
 function spawnSpark(x, y, dirX, dirY, speed, scale, amount, kind) {
   for (let i = 0; i < amount; i++) {
@@ -473,6 +499,21 @@ function drawParticles() {
       ctx.moveTo(0, -s); ctx.lineTo(0, s);
       ctx.stroke();
       ctx.restore();
+    } else if (p.kind === "gira") { // ベギラマ（フェイク）：フラットな黄色
+      ctx.fillStyle = `rgba(255,228,90,${0.85 * k})`;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.size * 1.1, 0, Math.PI * 2);
+      ctx.fill();
+    } else if (p.kind === "smoke") { // 白煙（発射の尾）
+      const r = p.size * (0.6 + (p.life / p.max) * 1.9);
+      const g = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, r);
+      g.addColorStop(0, `rgba(255,255,255,${0.30 * k})`);
+      g.addColorStop(0.6, `rgba(255,250,235,${0.16 * k})`);
+      g.addColorStop(1, "rgba(255,255,255,0)");
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
+      ctx.fill();
     } else { // spark（白）
       ctx.fillStyle = `rgba(255,255,255,${0.9 * k})`;
       ctx.beginPath();
@@ -493,27 +534,41 @@ function analyzeHand(landmarksNorm) {
     y: (lm[0].y + lm[5].y + lm[9].y + lm[13].y + lm[17].y) / 5,
   };
   const scale = dist(lm[0], lm[9]); // 手首→中指付け根 ＝ 手の大きさ
-  let extended = 0;
+  const ext = [];
   for (const [pip, tip] of [[6, 8], [10, 12], [14, 16], [18, 20]]) {
-    if (dist(lm[tip], lm[0]) > dist(lm[pip], lm[0]) * 1.12) extended++;
+    ext.push(dist(lm[tip], lm[0]) > dist(lm[pip], lm[0]) * 1.12);
   }
-  return { lm, palm, scale, open: extended >= 3 };
+  const count = ext.filter(Boolean).length;
+  return {
+    lm, palm, scale,
+    open: count >= 3,
+    fist: count <= 1,
+    twoSign: ext[0] && ext[1] && !ext[2] && !ext[3], // 人差し指＋中指の2本指（ギラ系の構え）
+  };
 }
 
 /* ============================================================
    ゲームステート
    ============================================================ */
 const S = {
-  phase: "idle",        // idle | fuse | ready | fire | cool
+  phase: "idle",        // idle | fuse | ready | draw | fire | cool
   fire: 0, ice: 0,      // チャージ量 0..1
   fusion: 0,            // 融合量 0..1
+  draw: 0,              // 弓の引き絞り量 0..1
   fusePt: { x: 0, y: 0 },
   fuseScale: 60,
-  readySince: 0,
+  anchor: { x: 0, y: 0 },   // 弓を引き始めた位置（弓手判定の基準）
+  bow:    { x: 0, y: 0 },   // 弓手（前に残る手）
+  nock:   { x: 0, y: 0 },   // 引き手（後ろへ引く手）
+  dir:    { x: 0, y: -1 },  // 発射方向（引き手→弓手）
+  drawTick: 0,
   lostFrames: 0,
   coolUntil: 0,
-  anim: null,           // 発射アニメ { mode, p0, dir, w0, t0 }
-  hist: [],             // 融合点の履歴 [{t,x,y,scale}]
+  gFire: false, gIce: false,  // 2本指（ギラ系）でチャージしたか
+  fake: false,                // 隠しコマンド：メドローアに似せたベギラマ
+  lastShotFake: false,        // 直前の一撃がベギラマだったか（化かし合い判定）
+
+  anim: null,           // 発射アニメ { p0, dir, w0, t0 }
   shots: 0,
 };
 let hintText = "";
@@ -523,19 +578,50 @@ function setHint(s) {
   if (s !== hintText) { hintText = s; hintEl.textContent = s; }
 }
 
+/* セリフバナー（発射フェーズが終わっても表示し続けられる） */
+let banner = null; // { lines, t0, dur, style }
+function showBanner(text, delay, dur, style, now) {
+  banner = { lines: text.split("\n"), t0: now + delay, dur, style };
+}
+function drawBanner(now) {
+  if (!banner) return;
+  const be = now - banner.t0;
+  if (be < 0) return;
+  if (be > banner.dur) { banner = null; return; }
+  const tk = clamp(be / 0.12, 0, 1);
+  const alpha = clamp(be > banner.dur - 0.35 ? (banner.dur - be) / 0.35 : 1, 0, 1);
+  const size = Math.round(clamp(cw * 0.055, 26, 68));
+  const gold = banner.style === "gold";
+  ctx.save();
+  ctx.translate(cw / 2, ch * 0.30);
+  const pop = 0.7 + 0.3 * easeOutCubic(tk);
+  ctx.scale(pop, pop);
+  ctx.globalAlpha = alpha;
+  ctx.textAlign = "center";
+  ctx.font = `900 ${size}px "Hiragino Sans", sans-serif`;
+  ctx.shadowColor = gold ? "#ffd020" : "#ff8a20";
+  ctx.shadowBlur = 26;
+  ctx.strokeStyle = gold ? "rgba(255,180,30,0.9)" : "rgba(40,140,255,0.9)";
+  ctx.lineWidth = 7;
+  banner.lines.forEach((line, i) => ctx.strokeText(line, 0, i * size * 1.25));
+  ctx.shadowColor = gold ? "#ffe060" : "#4db2ff";
+  ctx.fillStyle = "#ffffff";
+  banner.lines.forEach((line, i) => ctx.fillText(line, 0, i * size * 1.25));
+  ctx.restore();
+}
+
 function updateState(hands, now, dt) {
   // ---- 発射中／クールダウン ----
   if (S.phase === "fire") {
     if (now - S.anim.t0 > 1.45) {
       S.phase = "cool";
       S.coolUntil = now + 1.1;
-      S.fire = S.ice = S.fusion = 0;
-      S.hist = [];
+      S.fire = S.ice = S.fusion = S.draw = 0;
     }
     return;
   }
   if (S.phase === "cool") {
-    setHint("……決まったな。");
+    setHint("");
     if (now > S.coolUntil) S.phase = "idle";
     return;
   }
@@ -551,27 +637,28 @@ function updateState(hands, now, dt) {
     else iceHand = hands[0];
   }
 
-  // ---- READY 中に手を見失う ＝ 高速突き出しとみなして発射 ----
-  if (S.phase === "ready") {
-    if (hands.length < 2) {
-      S.lostFrames++;
-      if (S.lostFrames >= 4) { triggerFire(now, null); return; }
-    } else {
-      S.lostFrames = 0;
-    }
-  }
-
   // ---- チャージ（融合が始まったらチャージは維持）----
-  const fusing = S.phase === "fuse" || S.phase === "ready";
-  if (!fusing) {
-    S.fire = clamp(S.fire + (fireHand && fireHand.open ? dt / 0.6 : -dt / 0.5), 0, 1);
-    S.ice  = clamp(S.ice  + (iceHand  && iceHand.open  ? dt / 0.6 : -dt / 0.5), 0, 1);
+  const held = S.phase === "fuse" || S.phase === "ready" || S.phase === "draw";
+  if (!held) {
+    const fCast = fireHand && (fireHand.open || fireHand.twoSign);
+    const iCast = iceHand && (iceHand.open || iceHand.twoSign);
+    S.fire = clamp(S.fire + (fCast ? dt / 0.6 : -dt / 0.5), 0, 1);
+    S.ice  = clamp(S.ice  + (iCast ? dt / 0.6 : -dt / 0.5), 0, 1);
+    if (fCast) S.gFire = fireHand.twoSign; // 2本指チャージ＝ベギラマ（隠しコマンド）
+    if (iCast) S.gIce  = iceHand.twoSign;
     if (prevFire < 1 && S.fire >= 1) SFX.chargeComplete("fire");
     if (prevIce  < 1 && S.ice  >= 1) SFX.chargeComplete("ice");
   } else {
     S.fire = S.ice = 1;
   }
   prevFire = S.fire; prevIce = S.ice;
+
+  // ---- 弓の引き絞り中 ----
+  if (S.phase === "draw") {
+    updateDraw(hands, now, dt);
+    updateHint(hands);
+    return;
+  }
 
   // ---- 融合判定 ----
   if (fireHand && iceHand) {
@@ -586,22 +673,17 @@ function updateState(hands, now, dt) {
     };
     S.fuseScale = avgScale;
 
-    // 融合点の速度履歴（突き出し検出用）
-    S.hist.push({ t: now, x: S.fusePt.x, y: S.fusePt.y, scale: avgScale });
-    while (S.hist.length > 8 || (S.hist.length && now - S.hist[0].t > 0.22)) S.hist.shift();
-
     if (S.phase === "idle") {
       if (S.fire >= 0.95 && S.ice >= 0.95 && closeIn) {
         S.phase = "fuse";
         S.fusion = 0.001;
+        S.fake = S.gFire && S.gIce; // 両手とも2本指ならフェイク（ベギラマ）
       }
     } else if (S.phase === "fuse") {
       if (closeOut) {
         S.fusion = clamp(S.fusion + dt / 0.7, 0, 1);
         if (S.fusion >= 1) {
           S.phase = "ready";
-          S.readySince = now;
-          S.lostFrames = 0;
           SFX.fusionReady();
         }
       } else {
@@ -609,63 +691,127 @@ function updateState(hands, now, dt) {
         if (S.fusion <= 0) S.phase = "idle";
       }
     } else if (S.phase === "ready") {
-      if (!closeOut) {
-        // ゆっくり離した → 霧散
+      // グーにして引き始めたら弓モードへ
+      const bothFist = fireHand.fist && iceHand.fist;
+      const oneFist  = fireHand.fist || iceHand.fist;
+      if (bothFist || (oneFist && d > avgScale * 2.6)) {
+        S.phase = "draw";
+        S.draw = 0;
+        S.drawTick = 0;
+        S.lostFrames = 0;
+        S.anchor = { ...S.fusePt };
+        S.bow  = { ...fireHand.palm };
+        S.nock = { ...iceHand.palm };
+        // 化かし合い：ベギラマ直後の本物は、弓を引いた時点で勝ち名乗り
+        if (!S.fake && S.lastShotFake) {
+          showBanner("化かし合いは…俺の勝ちだッ!!", 0, 2.0, "duo", now);
+        }
+      } else if (!closeOut) {
+        // グーにせずゆっくり離した → 霧散
         S.fusion = clamp(S.fusion - dt / 0.5, 0, 1);
         if (S.fusion <= 0) S.phase = "idle";
       } else {
         S.fusion = 1;
       }
-      // 突き出し検出（画面内の高速移動 or 手が急拡大＝カメラ方向への突き）
-      if (now - S.readySince > 0.12 && S.hist.length >= 3) {
-        const h0 = S.hist[0], h1 = S.hist[S.hist.length - 1];
-        const span = Math.max(h1.t - h0.t, 0.01);
-        const vx = (h1.x - h0.x) / span;
-        const vy = (h1.y - h0.y) / span;
-        const speedNorm = Math.hypot(vx, vy) / cw;            // 画面幅/秒
-        const scaleRate = (h1.scale - h0.scale) / span / Math.max(h0.scale, 1); // 相対拡大率/秒
-        if (speedNorm > 1.05) {
-          const mag = Math.hypot(vx, vy);
-          triggerFire(now, { x: vx / mag, y: vy / mag });
-          return;
-        }
-        if (scaleRate > 1.25) { triggerFire(now, null); return; }
-      }
     }
   } else {
     // 手が2本そろっていない
-    if (S.phase === "fuse") {
-      S.fusion = clamp(S.fusion - dt / 0.35, 0, 1);
+    if (S.phase === "fuse" || S.phase === "ready") {
+      S.fusion = clamp(S.fusion - dt / 0.6, 0, 1);
       if (S.fusion <= 0) S.phase = "idle";
     }
-    S.hist = [];
   }
 
-  // ---- ヒント ----
-  if (hands.length === 0) setHint("両手をカメラに映してください");
-  else if (S.phase === "ready") setHint("前へ突き出せ！！");
+  updateHint(hands);
+}
+
+/* 弓を引いている間の処理 */
+function updateDraw(hands, now, dt) {
+  S.fusion = 1;
+  if (hands.length >= 2) {
+    S.lostFrames = 0;
+    // 融合した位置に近い方が弓手（前）、遠い方が引き手（後ろ）
+    const [a, b] = hands;
+    const front = dist(a.palm, S.anchor) <= dist(b.palm, S.anchor) ? a : b;
+    const back  = front === a ? b : a;
+    S.bow  = { ...front.palm };
+    S.nock = { ...back.palm };
+    const avgScale = (front.scale + back.scale) / 2;
+    S.fuseScale = avgScale;
+
+    const d = dist(front.palm, back.palm);
+    if (d > 4) {
+      S.dir = { x: (front.palm.x - back.palm.x) / d, y: (front.palm.y - back.palm.y) / d };
+    }
+    const target = clamp((d / avgScale - 1.6) / 3.0, 0, 1);
+    S.draw += (target - S.draw) * Math.min(dt * 14, 1);
+
+    // 弓のきしみ音
+    const tick = Math.floor(S.draw * 6);
+    if (tick > S.drawTick) {
+      S.drawTick = tick;
+      SFX.ping(260 + S.draw * 420, 0.1, 0.09, "sawtooth");
+    } else if (tick < S.drawTick) {
+      S.drawTick = tick;
+    }
+
+    // パーに開いた → 発射！！
+    if ((back.open || front.open) && S.draw >= 0.3) { triggerFire(now); return; }
+    // 引きが足りないまま開いた → 融合状態に戻る
+    if (back.open && S.draw < 0.3) { S.phase = "ready"; return; }
+    // 手を戻した → 融合状態に戻る
+    if (d < avgScale * 1.4 && S.draw < 0.15) { S.phase = "ready"; return; }
+  } else if (hands.length === 1) {
+    const h = hands[0];
+    const nearBow = dist(h.palm, S.bow) < dist(h.palm, S.nock);
+    if (nearBow && S.draw >= 0.5) {
+      // 引き手を見失った ＝ 勢いよくパーに開いた可能性が高い → 発射
+      S.lostFrames++;
+      if (S.lostFrames >= 4) triggerFire(now);
+    } else if (h.open && S.draw >= 0.3) {
+      triggerFire(now);
+    } else {
+      S.lostFrames++;
+      if (S.lostFrames > 40) { S.phase = "idle"; S.fusion = 0; S.draw = 0; }
+    }
+  } else {
+    S.lostFrames++;
+    if (S.draw >= 0.5 && S.lostFrames >= 5) { triggerFire(now); return; }
+    if (S.lostFrames > 40) { S.phase = "idle"; S.fusion = 0; S.draw = 0; }
+  }
+}
+
+function updateHint(hands) {
+  if (hands.length === 0 && S.phase === "idle") setHint("両手をカメラに映してください");
+  else if (S.phase === "draw") setHint(S.draw >= 0.3 ? "🏹 引いた手をパッと開け——放て！！" : "🏹 グーのまま片手を引き絞れ……！");
+  else if (S.phase === "ready") setHint("両手をグーにして、片手を引いて弓を作れ！");
   else if (S.phase === "fuse") setHint("融合中……両手をそのまま！");
   else if (S.fire >= 1 && S.ice >= 1) setHint("両手を合わせて融合させろ！");
   else setHint("両手を開いてチャージ！　🔥右手：メラゾーマ　❄️左手：マヒャド");
 }
 
-function triggerFire(now, dir) {
+function triggerFire(now) {
   S.phase = "fire";
   S.anim = {
-    mode: dir ? "beam" : "blast",
-    p0: { ...S.fusePt },
-    dir: dir || { x: 0, y: 0 },
+    p0: { ...S.bow },
+    dir: { ...S.dir },
     w0: clamp(S.fuseScale * 0.55, 18, 55),
+    fake: S.fake,
+    combo: !S.fake && S.lastShotFake, // 化かし合いコンボ（表示は「メドローア！！」のみ）
     t0: now,
   };
   S.shots++;
   SFX.blast();
   setHint("");
+  // セリフ演出：フェイクなら啖呵（勝ち名乗りは弓を引いた時点で表示済み）
+  if (S.fake) {
+    showBanner("横っ面を…\nひっぱたくんだよおっ!!!", 0.06, 1.6, "gold", now);
+  }
+  S.lastShotFake = S.fake;
   // 発射点から白いスパークを撒き散らす
-  const d = dir || { x: 0, y: -0.4 };
-  spawnSpark(S.fusePt.x, S.fusePt.y, d.x, d.y, 900, S.fuseScale, 40, "spark");
-  spawnSpark(S.fusePt.x, S.fusePt.y, d.x, d.y, 700, S.fuseScale, 15, "sparkF");
-  spawnSpark(S.fusePt.x, S.fusePt.y, d.x, d.y, 700, S.fuseScale, 15, "sparkI");
+  spawnSpark(S.bow.x, S.bow.y, S.dir.x, S.dir.y, 900, S.fuseScale, 40, "spark");
+  spawnSpark(S.bow.x, S.bow.y, S.dir.x, S.dir.y, 700, S.fuseScale, 15, S.fake ? "gira" : "sparkF");
+  spawnSpark(S.bow.x, S.bow.y, S.dir.x, S.dir.y, 700, S.fuseScale, 15, S.fake ? "gira" : "sparkI");
 }
 
 /* ============================================================
@@ -683,13 +829,18 @@ function drawHandDots(hand, color) {
   ctx.restore();
 }
 
-function drawAura(palm, scale, charge, isFire, now) {
+function drawAura(palm, scale, charge, isFire, now, gira = false) {
   if (charge <= 0.02) return;
   ctx.save();
   ctx.globalCompositeOperation = "lighter";
   const r = scale * (0.6 + 1.3 * charge) * (1 + 0.06 * Math.sin(now * (isFire ? 17 : 11)));
   const g = ctx.createRadialGradient(palm.x, palm.y, 0, palm.x, palm.y, r);
-  if (isFire) {
+  if (gira) {
+    // 隠しコマンド：フラットな黄色（ベギラマ）
+    g.addColorStop(0, `rgba(255,245,160,${0.7 * charge})`);
+    g.addColorStop(0.55, `rgba(255,220,60,${0.4 * charge})`);
+    g.addColorStop(1, "rgba(255,200,0,0)");
+  } else if (isFire) {
     g.addColorStop(0, `rgba(255,235,170,${0.75 * charge})`);
     g.addColorStop(0.45, `rgba(255,130,30,${0.5 * charge})`);
     g.addColorStop(1, "rgba(255,50,0,0)");
@@ -704,7 +855,8 @@ function drawAura(palm, scale, charge, isFire, now) {
   ctx.fill();
   ctx.restore();
 
-  // 呪文名ラベル
+  // 呪文名ラベル（フェイク時は正体を隠すため表示しない）
+  if (gira) return;
   const name = isFire ? "メラゾーマ" : "マヒャド";
   ctx.save();
   ctx.font = `800 ${Math.round(clamp(scale * 0.32, 14, 26))}px "Hiragino Sans", sans-serif`;
@@ -723,13 +875,19 @@ function drawFusionBall(now) {
   ctx.save();
   ctx.globalCompositeOperation = "lighter";
 
-  // 周回する炎と氷の光球（融合が進むほど中心に近づく）
+  // 周回する光球（融合が進むほど中心に近づく）フェイク時は両方とも黄色
   const orbitR = sc * (1.5 - lv * 1.0);
   const ang = now * 7;
-  for (const [phase, colA, colB] of [
-    [0, "rgba(255,235,170,", "rgba(255,110,20,"],
-    [Math.PI, "rgba(235,250,255,", "rgba(70,170,255,"],
-  ]) {
+  const orbCols = S.fake
+    ? [
+        [0, "rgba(255,248,190,", "rgba(255,215,70,"],
+        [Math.PI, "rgba(255,248,190,", "rgba(255,215,70,"],
+      ]
+    : [
+        [0, "rgba(255,235,170,", "rgba(255,110,20,"],
+        [Math.PI, "rgba(235,250,255,", "rgba(70,170,255,"],
+      ];
+  for (const [phase, colA, colB] of orbCols) {
     const ox = p.x + Math.cos(ang + phase) * orbitR;
     const oy = p.y + Math.sin(ang + phase) * orbitR * 0.6;
     const r = sc * (0.35 + lv * 0.15);
@@ -776,88 +934,198 @@ function drawLine(x0, y0, x1, y1, width, style) {
   ctx.stroke();
 }
 
+/* 黄金に輝く光の矢（白熱コア＋金色のオーラ、輪郭が炎のように揺らぐ） */
+function drawEnergyArrow(tail, tip, w, alpha) {
+  const dx = tip.x - tail.x, dy = tip.y - tail.y;
+  const L = Math.hypot(dx, dy);
+  if (L < 4) return;
+  const d = { x: dx / L, y: dy / L };
+  const n = { x: -d.y, y: d.x };
+  // 尾は細く、先端寄り（55%地点）が最も太いひし形シルエット
+  const profile = [[0.25, 0.45], [0.55, 1.0], [0.85, 0.72]];
+  // フェイク（ベギラマ）はフラットな黄色2層、本物は金色に輝く3層
+  const layers = S.fake
+    ? [
+        [2.0, `rgba(255,222,85,${0.25 * alpha})`],
+        [1.0, `rgba(255,246,200,${0.95 * alpha})`],
+      ]
+    : [
+        [2.6, `rgba(255,190,50,${0.16 * alpha})`],
+        [1.6, `rgba(255,220,110,${0.40 * alpha})`],
+        [1.0, `rgba(255,250,228,${0.95 * alpha})`],
+      ];
+  const jAmp = S.fake ? 0.12 : 0.35; // フェイクは輪郭のゆらぎも控えめ
+  for (const [k, style] of layers) {
+    const ww = w * k;
+    const j = () => (Math.random() - 0.5) * ww * jAmp; // 炎のゆらぎ
+    ctx.fillStyle = style;
+    ctx.beginPath();
+    ctx.moveTo(tail.x, tail.y);
+    for (const [f, wf] of profile) {
+      ctx.lineTo(tail.x + dx * f + n.x * (ww * wf + j()),
+                 tail.y + dy * f + n.y * (ww * wf + j()));
+    }
+    ctx.lineTo(tip.x, tip.y);
+    for (let i = profile.length - 1; i >= 0; i--) {
+      const [f, wf] = profile[i];
+      ctx.lineTo(tail.x + dx * f - n.x * (ww * wf + j()),
+                 tail.y + dy * f - n.y * (ww * wf + j()));
+    }
+    ctx.closePath();
+    ctx.fill();
+  }
+  // 先端の十字の輝き
+  const s = w * 3;
+  ctx.strokeStyle = `rgba(255,255,255,${0.85 * alpha})`;
+  ctx.lineWidth = Math.max(2, w * 0.16);
+  ctx.lineCap = "round";
+  ctx.beginPath();
+  ctx.moveTo(tip.x - d.x * s * 0.4, tip.y - d.y * s * 0.4);
+  ctx.lineTo(tip.x + d.x * s * 0.9, tip.y + d.y * s * 0.9);
+  ctx.moveTo(tip.x - n.x * s * 0.55, tip.y - n.y * s * 0.55);
+  ctx.lineTo(tip.x + n.x * s * 0.55, tip.y + n.y * s * 0.55);
+  ctx.stroke();
+}
+
+/* 引き絞り中の光の弓矢 */
+function drawBow(now) {
+  const { bow, nock, dir, fuseScale: sc, draw } = S;
+  const n = { x: -dir.y, y: dir.x };
+  const R = sc * 2.1;
+  const tipA = { x: bow.x + n.x * R, y: bow.y + n.y * R };
+  const tipB = { x: bow.x - n.x * R, y: bow.y - n.y * R };
+  const ctrl = { x: bow.x + dir.x * R * 0.85, y: bow.y + dir.y * R * 0.85 };
+
+  ctx.save();
+  ctx.globalCompositeOperation = "lighter";
+
+  // 弓本体（上弦＝炎、下弦＝氷のグラデーション。フェイク時は単色の黄）
+  let bowStroke;
+  if (S.fake) {
+    bowStroke = "rgba(255,225,95,0.95)";
+  } else {
+    const grad = ctx.createLinearGradient(tipA.x, tipA.y, tipB.x, tipB.y);
+    grad.addColorStop(0, "rgba(255,140,40,0.95)");
+    grad.addColorStop(0.5, "rgba(255,255,255,0.95)");
+    grad.addColorStop(1, "rgba(90,180,255,0.95)");
+    bowStroke = grad;
+  }
+  for (const [lw, alpha] of [[sc * 0.55, 0.22], [sc * 0.3, 0.5], [sc * 0.13, 1]]) {
+    ctx.globalAlpha = alpha;
+    ctx.strokeStyle = bowStroke;
+    ctx.lineWidth = lw;
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    ctx.moveTo(tipA.x, tipA.y);
+    ctx.quadraticCurveTo(ctrl.x, ctrl.y, tipB.x, tipB.y);
+    ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+
+  // 弦（弓の両端 → 引き手）
+  ctx.strokeStyle = "rgba(255,255,255,0.75)";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(tipA.x, tipA.y);
+  ctx.lineTo(nock.x, nock.y);
+  ctx.lineTo(tipB.x, tipB.y);
+  ctx.stroke();
+
+  // 黄金の光の矢（引くほど巨大化する）
+  const reach = sc * (1.6 + draw * 4.2);
+  const tip = { x: bow.x + dir.x * reach, y: bow.y + dir.y * reach };
+  const tail = { x: nock.x - dir.x * sc * 0.4, y: nock.y - dir.y * sc * 0.4 };
+  const w = sc * (0.28 + draw * 0.5) * (1 + 0.06 * Math.sin(now * 26));
+  drawEnergyArrow(tail, tip, w, 0.7 + draw * 0.3);
+  // 矢からこぼれる火花
+  if (Math.random() < 0.4 + draw * 0.6) {
+    const s = Math.random();
+    spawnSpark(tail.x + (tip.x - tail.x) * s, tail.y + (tip.y - tail.y) * s,
+               n.x, n.y, 130, sc * 0.8, 1,
+               Math.random() < 0.6 ? (S.fake ? "gira" : "sparkF") : "spark");
+  }
+
+  // 弓手と引き手の光
+  for (const [pt, rr] of [[nock, sc * 0.5], [bow, sc * 0.65]]) {
+    const r = rr * (1 + draw * 0.4);
+    const g = ctx.createRadialGradient(pt.x, pt.y, 0, pt.x, pt.y, r);
+    g.addColorStop(0, "rgba(255,252,235,0.85)");
+    g.addColorStop(1, "rgba(255,255,255,0)");
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(pt.x, pt.y, r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
 function drawFireAnim(now) {
   const a = S.anim;
   const e = now - a.t0;
   const diag = Math.hypot(cw, ch);
   const fade = e > 1.0 ? clamp(1 - (e - 1.0) / 0.45, 0, 1) : 1;
+  const { p0, dir } = a;
+  const n = { x: -dir.y, y: dir.x };
+  const flight = easeOutCubic(clamp(e / 0.32, 0, 1)) * diag * 1.6;
+  const hp = { x: p0.x + dir.x * flight, y: p0.y + dir.y * flight }; // 矢の現在位置
+  const w = a.w0 * (1 + 0.1 * Math.sin(e * 42)) * (0.7 + 0.3 * fade);
+  const arrowLen = Math.max(w * 11, 130);
+  const trailLen = Math.max(flight - arrowLen * 0.6, 0);
+  const trailEnd = { x: p0.x + dir.x * trailLen, y: p0.y + dir.y * trailLen };
 
   ctx.save();
   ctx.globalCompositeOperation = "lighter";
+  ctx.globalAlpha = fade;
 
-  if (a.mode === "beam") {
-    const { p0, dir } = a;
-    const len = easeOutCubic(clamp(e / 0.16, 0, 1)) * diag * 1.4;
-    const p1 = { x: p0.x + dir.x * len, y: p0.y + dir.y * len };
-    const n = { x: -dir.y, y: dir.x };
-    const w = a.w0 * (1 + 0.15 * Math.sin(e * 42)) * (0.6 + 0.4 * fade);
+  // 白煙の尾（発射点から矢に向かって広がる）
+  const w0t = w * 0.7, w1t = w * 4.2;
+  const tg = ctx.createLinearGradient(p0.x, p0.y, trailEnd.x, trailEnd.y);
+  tg.addColorStop(0, "rgba(255,255,255,0.08)");
+  tg.addColorStop(0.7, "rgba(255,252,240,0.30)");
+  tg.addColorStop(1, "rgba(255,245,210,0.22)");
+  ctx.fillStyle = tg;
+  ctx.beginPath();
+  ctx.moveTo(p0.x + n.x * w0t, p0.y + n.y * w0t);
+  ctx.lineTo(trailEnd.x + n.x * w1t, trailEnd.y + n.y * w1t);
+  ctx.lineTo(trailEnd.x - n.x * w1t, trailEnd.y - n.y * w1t);
+  ctx.lineTo(p0.x - n.x * w0t, p0.y - n.y * w0t);
+  ctx.closePath();
+  ctx.fill();
 
-    // 外縁：炎側と氷側に分かれた二重ビーム（原作の融合表現）
-    ctx.globalAlpha = fade;
-    drawLine(p0.x + n.x * w * 0.9, p0.y + n.y * w * 0.9,
-             p1.x + n.x * w * 0.9, p1.y + n.y * w * 0.9, w * 2.6, "rgba(255,110,25,0.30)");
-    drawLine(p0.x - n.x * w * 0.9, p0.y - n.y * w * 0.9,
-             p1.x - n.x * w * 0.9, p1.y - n.y * w * 0.9, w * 2.6, "rgba(60,160,255,0.30)");
-    drawLine(p0.x, p0.y, p1.x, p1.y, w * 1.8, "rgba(255,235,170,0.55)");
-    drawLine(p0.x, p0.y, p1.x, p1.y, w * 0.95, "rgba(255,255,255,0.95)");
+  // 金色の光の筋
+  drawLine(p0.x, p0.y, hp.x, hp.y, w * 2.0, "rgba(255,210,80,0.30)");
+  drawLine(p0.x, p0.y, hp.x, hp.y, w * 0.9, "rgba(255,250,230,0.55)");
 
-    // 螺旋（炎と氷が絡み合う）
-    const step = 26;
-    for (let s = 0; s < len; s += step) {
-      const ph = s * 0.045 - e * 34;
-      const off = Math.sin(ph) * w * 1.5;
-      const bx = p0.x + dir.x * s, by = p0.y + dir.y * s;
-      ctx.fillStyle = "rgba(255,160,60,0.65)";
-      ctx.beginPath();
-      ctx.arc(bx + n.x * off, by + n.y * off, w * 0.3, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.fillStyle = "rgba(120,200,255,0.65)";
-      ctx.beginPath();
-      ctx.arc(bx - n.x * off, by - n.y * off, w * 0.3, 0, Math.PI * 2);
-      ctx.fill();
-    }
+  // 黄金の巨大な光の矢
+  const tail = { x: hp.x - dir.x * arrowLen, y: hp.y - dir.y * arrowLen };
+  const tipP = { x: hp.x + dir.x * w * 2, y: hp.y + dir.y * w * 2 };
+  drawEnergyArrow(tail, tipP, w * 1.7, 1);
 
-    // 発射点＆先端の光球
-    for (const [pt, rr] of [[p0, w * 4], [p1, w * 2.6]]) {
-      const g = ctx.createRadialGradient(pt.x, pt.y, 0, pt.x, pt.y, rr);
-      g.addColorStop(0, `rgba(255,255,255,${0.9 * fade})`);
-      g.addColorStop(1, "rgba(255,255,255,0)");
-      ctx.fillStyle = g;
-      ctx.beginPath();
-      ctx.arc(pt.x, pt.y, rr, 0, Math.PI * 2);
-      ctx.fill();
-    }
-    ctx.globalAlpha = 1;
-
-    // ビーム沿いのスパーク
-    if (e < 1.0 && Math.random() < 0.8) {
-      const s = Math.random() * len;
-      spawnSpark(p0.x + dir.x * s, p0.y + dir.y * s, n.x, n.y, 250, a.w0, 2,
-                 Math.random() < 0.5 ? "sparkF" : "sparkI");
-    }
-  } else {
-    // blast：カメラ（＝視聴者）に向かって撃つ → 全画面を呑み込む
-    const { p0 } = a;
-    const k = easeOutCubic(clamp(e / 0.9, 0, 1));
-    const R = k * diag * 1.15;
-    // 拡大する二重リング
-    ctx.globalAlpha = fade;
-    ctx.lineWidth = 34 * (1 - k * 0.5);
-    ctx.strokeStyle = "rgba(255,120,30,0.55)";
-    ctx.beginPath(); ctx.arc(p0.x, p0.y, R, 0, Math.PI * 2); ctx.stroke();
-    ctx.strokeStyle = "rgba(80,170,255,0.55)";
-    ctx.beginPath(); ctx.arc(p0.x, p0.y, R * 0.82, 0, Math.PI * 2); ctx.stroke();
-    // 膨張する白熱コア
-    const coreAlpha = e < 0.3 ? e / 0.3 : clamp(1 - (e - 0.3) / 0.9, 0, 1);
-    const g = ctx.createRadialGradient(p0.x, p0.y, 0, p0.x, p0.y, Math.max(R * 0.9, 1));
-    g.addColorStop(0, `rgba(255,255,255,${0.95 * coreAlpha})`);
-    g.addColorStop(0.6, `rgba(255,245,215,${0.6 * coreAlpha})`);
-    g.addColorStop(1, "rgba(255,255,255,0)");
+  // 発射点＆矢の光球
+  for (const [pt, rr, col] of [[p0, w * 3.5, "255,240,190"], [hp, w * 4.5, "255,235,170"]]) {
+    const g = ctx.createRadialGradient(pt.x, pt.y, 0, pt.x, pt.y, rr);
+    g.addColorStop(0, `rgba(${col},0.85)`);
+    g.addColorStop(1, `rgba(${col},0)`);
     ctx.fillStyle = g;
     ctx.beginPath();
-    ctx.arc(p0.x, p0.y, Math.max(R * 0.9, 1), 0, Math.PI * 2);
+    ctx.arc(pt.x, pt.y, rr, 0, Math.PI * 2);
     ctx.fill();
-    ctx.globalAlpha = 1;
+  }
+  ctx.globalAlpha = 1;
+
+  // 白煙パーティクルを尾に沿って撒く
+  if (e < 0.7) {
+    for (let i = 0; i < 6; i++) {
+      const s = Math.random() * trailLen;
+      spawnSmoke(p0.x + dir.x * s + n.x * (Math.random() - 0.5) * w * 2,
+                 p0.y + dir.y * s + n.y * (Math.random() - 0.5) * w * 2,
+                 w * (0.8 + (s / Math.max(trailLen, 1)) * 1.6));
+    }
+    if (Math.random() < 0.8) {
+      const s = Math.random() * flight;
+      spawnSpark(p0.x + dir.x * s, p0.y + dir.y * s, n.x, n.y, 250, a.w0, 2,
+                 Math.random() < 0.5 ? (a.fake ? "gira" : "sparkF") : "spark");
+    }
   }
   ctx.restore();
 
@@ -868,24 +1136,46 @@ function drawFireAnim(now) {
     ctx.fillRect(0, 0, cw, ch);
   }
 
-  // 「メドローア！！」
-  if (e > 0.06 && e < 1.3) {
+  // 「極大消滅呪文」＋ルビ「メドローア」
+  // （フェイク時はセリフバナーを別途表示。化かし合いコンボ時はルビなしの「メドローア！！」のみ）
+  if (!a.fake && e > 0.06 && e < 1.3) {
     const tk = clamp((e - 0.06) / 0.12, 0, 1);
     const alpha = e > 1.0 ? 1 - (e - 1.0) / 0.3 : 1;
+    const size = Math.round(clamp(cw * 0.072, 34, 92));
+    const baseText = a.combo ? "メドローア！！" : "極大消滅呪文！！";
     ctx.save();
-    ctx.translate(cw / 2, ch * 0.24);
-    ctx.scale(0.6 + 0.4 * easeOutCubic(tk), 0.6 + 0.4 * easeOutCubic(tk));
-    ctx.font = `900 ${Math.round(clamp(cw * 0.085, 40, 110))}px "Hiragino Sans", sans-serif`;
-    ctx.textAlign = "center";
+    ctx.translate(cw / 2, ch * 0.26);
+    const pop = 0.6 + 0.4 * easeOutCubic(tk);
+    ctx.scale(pop, pop);
     ctx.globalAlpha = alpha;
+    ctx.textAlign = "center";
+    // 親文字
+    ctx.font = `900 ${size}px "Hiragino Sans", sans-serif`;
     ctx.shadowColor = "#ff8a20";
     ctx.shadowBlur = 30;
     ctx.strokeStyle = "rgba(40,140,255,0.9)";
     ctx.lineWidth = 8;
-    ctx.strokeText("メドローア！！", 0, 0);
+    ctx.strokeText(baseText, 0, 0);
     ctx.shadowColor = "#4db2ff";
     ctx.fillStyle = "#ffffff";
-    ctx.fillText("メドローア！！", 0, 0);
+    ctx.fillText(baseText, 0, 0);
+    // ルビ：漢字部分の真上に1文字ずつ均等配置
+    if (!a.combo) {
+      const kanji = "極大消滅呪文";   // ルビはこの部分の幅に振る
+      const ruby = "メドローア";
+      const fullW = ctx.measureText(baseText).width;
+      const kanjiW = ctx.measureText(kanji).width;
+      const rubySize = Math.round(size * 0.34);
+      ctx.font = `800 ${rubySize}px "Hiragino Sans", sans-serif`;
+      ctx.shadowColor = "#ffb020";
+      ctx.shadowBlur = 12;
+      ctx.fillStyle = "#fff6d8";
+      const left = -fullW / 2;
+      for (let i = 0; i < ruby.length; i++) {
+        const x = left + kanjiW * ((i + 0.5) / ruby.length);
+        ctx.fillText(ruby[i], x, -size * 0.95);
+      }
+    }
     ctx.restore();
   }
 }
@@ -922,11 +1212,15 @@ function loop(tms) {
   // ---- 状態更新 ----
   updateState(hands, now, dt);
   updateParticles(dt);
-  SFX.update(S.fire, S.ice, S.fusion, S.phase === "ready", now);
+  // 発射中とクールダウン中は融合ハム音を止める（余韻の「ウェーン」を防ぐ）
+  const humLevel = (S.phase === "fire" || S.phase === "cool") ? 0 : S.fusion;
+  SFX.update(S.fire, S.ice, humLevel,
+             S.phase === "ready" || (S.phase === "draw" && S.draw > 0.3),
+             now, S.phase === "draw" ? S.draw : 0);
 
   // ---- チャージ中のパーティクル生成 ----
   const fusing = S.phase === "fuse" || S.phase === "ready";
-  if (!fusing && S.phase !== "fire" && S.phase !== "cool") {
+  if (S.phase === "idle") {
     let fireHand = null, iceHand = null;
     if (hands.length >= 2) {
       const [a, b] = hands;
@@ -935,10 +1229,17 @@ function loop(tms) {
     } else if (hands.length === 1) {
       if (hands[0].palm.x > cw / 2) fireHand = hands[0]; else iceHand = hands[0];
     }
-    if (fireHand && S.fire > 0.1) spawnFire(fireHand.palm.x, fireHand.palm.y, fireHand.scale, Math.round(S.fire * 3));
-    if (iceHand && S.ice > 0.1)  spawnIce(iceHand.palm.x, iceHand.palm.y, iceHand.scale, Math.round(S.ice * 2));
+    if (fireHand && S.fire > 0.1) {
+      if (S.gFire) spawnGira(fireHand.palm.x, fireHand.palm.y, fireHand.scale, Math.round(S.fire * 2));
+      else spawnFire(fireHand.palm.x, fireHand.palm.y, fireHand.scale, Math.round(S.fire * 3));
+    }
+    if (iceHand && S.ice > 0.1) {
+      if (S.gIce) spawnGira(iceHand.palm.x, iceHand.palm.y, iceHand.scale, Math.round(S.ice * 2));
+      else spawnIce(iceHand.palm.x, iceHand.palm.y, iceHand.scale, Math.round(S.ice * 2));
+    }
   }
   if (fusing) spawnFuse(S.fusePt.x, S.fusePt.y, S.fuseScale, S.fusion, 3);
+  if (S.phase === "draw") spawnFuse(S.bow.x, S.bow.y, S.fuseScale * 0.8, 1, 2);
 
   // ---- 描画 ----
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -973,7 +1274,7 @@ function loop(tms) {
   }
 
   // チャージオーラ
-  if (!fusing && S.phase !== "fire" && S.phase !== "cool") {
+  if (S.phase === "idle") {
     let fireHand = null, iceHand = null;
     if (hands.length >= 2) {
       const [a, b] = hands;
@@ -982,20 +1283,24 @@ function loop(tms) {
     } else if (hands.length === 1) {
       if (hands[0].palm.x > cw / 2) fireHand = hands[0]; else iceHand = hands[0];
     }
-    if (fireHand) drawAura(fireHand.palm, fireHand.scale, S.fire, true, now);
-    if (iceHand)  drawAura(iceHand.palm, iceHand.scale, S.ice, false, now);
+    if (fireHand) drawAura(fireHand.palm, fireHand.scale, S.fire, true, now, S.gFire);
+    if (iceHand)  drawAura(iceHand.palm, iceHand.scale, S.ice, false, now, S.gIce);
   }
 
   drawParticles();
   if (fusing) drawFusionBall(now);
+  if (S.phase === "draw") drawBow(now);
   if (S.phase === "fire") drawFireAnim(now);
+  drawBanner(now);
 
   ctx.restore();
 
   // ---- HUD ゲージ ----
   fillFire.style.width = `${S.fire * 100}%`;
   fillIce.style.width  = `${S.ice * 100}%`;
-  fillFuse.style.width = `${S.fusion * 100}%`;
+  const drawing = S.phase === "draw";
+  fuseLabel.textContent = drawing ? "🏹 引き絞り" : "⚡ 融合";
+  fillFuse.style.width = `${(drawing ? S.draw : S.fusion) * 100}%`;
 }
 
 /* ============================================================
