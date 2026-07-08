@@ -34,9 +34,19 @@ python3 -m http.server 8765
 Chromeなら `index.html` をダブルクリック（file://）でも動作します。
 手検出モデルのダウンロードに初回のみインターネット接続が必要です。
 
+## 公開用ファイル
+
+公開URL: https://stella-create.co.jp/tools/medoroa/
+
+- `index.html` — アプリ本体（OGP・ファビコンのメタタグ設定済み）
+- `favicon.svg` / `favicon-32.png` / `apple-touch-icon.png` — ファビコン
+- `og-image.png` — OGP画像（1200×630）
+
+この5ファイルを同じディレクトリに配置してください。
+
 ## 技術構成
 
-- 単一HTMLファイル（`index.html`）のみ
+- アプリ本体は単一HTMLファイル（`index.html`）
 - 手検出: [MediaPipe Tasks Vision — HandLandmarker](https://developers.google.com/mediapipe/solutions/vision/hand_landmarker)（CDN・GPU委譲、失敗時はCPUにフォールバック）
 - エフェクト: Canvas 2D（加算合成パーティクル、ビーム、画面シェイク）
 - 効果音: Web Audio API による完全合成（外部音源ファイル不要）
