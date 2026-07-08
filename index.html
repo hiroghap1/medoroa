@@ -564,7 +564,9 @@ const S = {
   drawTick: 0,
   lostFrames: 0,
   coolUntil: 0,
-  gFire: false, gIce: false,  // 2本指（ギラ系）でチャージしたか
+  gFire: false, gIce: false,      // 2本指（ギラ系）でチャージしたか
+  gFireLv: 0, gIceLv: 0,          // 2本指判定の平滑化レベル（誤検出対策）
+  fLock: false, iLock: false,     // チャージ完了後は指の形の判定をロック
   fake: false,                // 隠しコマンド：メドローアに似せたベギラマ
   lastShotFake: false,        // 直前の一撃がベギラマだったか（化かし合い判定）
 
@@ -644,8 +646,19 @@ function updateState(hands, now, dt) {
     const iCast = iceHand && (iceHand.open || iceHand.twoSign);
     S.fire = clamp(S.fire + (fCast ? dt / 0.6 : -dt / 0.5), 0, 1);
     S.ice  = clamp(S.ice  + (iCast ? dt / 0.6 : -dt / 0.5), 0, 1);
-    if (fCast) S.gFire = fireHand.twoSign; // 2本指チャージ＝ベギラマ（隠しコマンド）
-    if (iCast) S.gIce  = iceHand.twoSign;
+    // 2本指チャージ＝ベギラマ（隠しコマンド）。
+    // 数フレームの誤検出で揺れないよう平滑化し、チャージ完了後はロック
+    // （手を合わせる動作で指の形が崩れても上書きされない）
+    if (fCast && !S.fLock) {
+      S.gFireLv += ((fireHand.twoSign ? 1 : 0) - S.gFireLv) * Math.min(dt * 8, 1);
+      S.gFire = S.gFireLv > 0.5;
+    }
+    if (iCast && !S.iLock) {
+      S.gIceLv += ((iceHand.twoSign ? 1 : 0) - S.gIceLv) * Math.min(dt * 8, 1);
+      S.gIce = S.gIceLv > 0.5;
+    }
+    S.fLock = S.fire >= 0.95 ? true : (S.fire < 0.3 ? false : S.fLock);
+    S.iLock = S.ice  >= 0.95 ? true : (S.ice  < 0.3 ? false : S.iLock);
     if (prevFire < 1 && S.fire >= 1) SFX.chargeComplete("fire");
     if (prevIce  < 1 && S.ice  >= 1) SFX.chargeComplete("ice");
   } else {
