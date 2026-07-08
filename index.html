@@ -1,0 +1,1072 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>メドローア — 極大消滅呪文シミュレーター</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    width: 100%; height: 100%;
+    background: #000;
+    overflow: hidden;
+    font-family: "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Yu Gothic", sans-serif;
+    color: #fff;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  #canvas {
+    position: fixed; inset: 0;
+    width: 100%; height: 100%;
+    display: block;
+  }
+  #video { display: none; }
+
+  /* ---------- HUD ---------- */
+  #hud {
+    position: fixed; inset: 0;
+    pointer-events: none;
+    display: none;
+  }
+  #hint {
+    position: absolute; top: 4%; left: 50%;
+    transform: translateX(-50%);
+    font-size: clamp(16px, 2.6vw, 28px);
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-align: center;
+    white-space: nowrap;
+    text-shadow: 0 0 12px rgba(255,255,255,.6), 0 2px 6px rgba(0,0,0,.9);
+    transition: opacity .25s;
+  }
+  .gauge {
+    position: absolute; bottom: 4%;
+    width: min(30vw, 300px);
+  }
+  .gauge .label {
+    font-size: clamp(12px, 1.6vw, 17px);
+    font-weight: 700;
+    margin-bottom: 6px;
+    text-shadow: 0 1px 4px rgba(0,0,0,.9);
+  }
+  .gauge .bar {
+    height: 10px;
+    border-radius: 5px;
+    background: rgba(255,255,255,.14);
+    overflow: hidden;
+    border: 1px solid rgba(255,255,255,.25);
+  }
+  .gauge .fill {
+    height: 100%; width: 0%;
+    border-radius: 5px;
+    transition: width .08s linear;
+  }
+  #gaugeIce  { left: 4%; }
+  #gaugeIce .fill  { background: linear-gradient(90deg, #7fd8ff, #ffffff); box-shadow: 0 0 10px #7fd8ff; }
+  #gaugeFire { right: 4%; text-align: right; }
+  #gaugeFire .fill { background: linear-gradient(90deg, #ff7a1a, #ffe680); box-shadow: 0 0 10px #ff7a1a; }
+  #gaugeFuse {
+    left: 50%; transform: translateX(-50%);
+    text-align: center;
+    width: min(24vw, 240px);
+  }
+  #gaugeFuse .fill { background: linear-gradient(90deg, #ff7a1a, #ffffff, #7fd8ff); box-shadow: 0 0 12px #fff; }
+
+  /* ---------- タイトル画面 ---------- */
+  #start {
+    position: fixed; inset: 0;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    gap: 26px;
+    background:
+      radial-gradient(ellipse at 20% 80%, rgba(255,90,0,.22), transparent 55%),
+      radial-gradient(ellipse at 80% 80%, rgba(40,150,255,.22), transparent 55%),
+      radial-gradient(ellipse at 50% 30%, rgba(255,255,255,.06), transparent 60%),
+      #05060c;
+    z-index: 10;
+    text-align: center;
+    padding: 24px;
+  }
+  #start .sub {
+    font-size: clamp(14px, 2vw, 20px);
+    letter-spacing: .5em;
+    color: #cfd6ff;
+    text-indent: .5em;
+  }
+  #start h1 {
+    font-size: clamp(46px, 10vw, 110px);
+    font-weight: 900;
+    letter-spacing: .06em;
+    line-height: 1.1;
+    background: linear-gradient(100deg, #ff9a3d 15%, #ffdf8a 38%, #ffffff 50%, #a8e4ff 62%, #4db2ff 85%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    filter: drop-shadow(0 0 24px rgba(255,170,60,.35)) drop-shadow(0 0 24px rgba(80,170,255,.35));
+  }
+  #start ol {
+    list-style: none;
+    font-size: clamp(14px, 1.9vw, 19px);
+    line-height: 2.1;
+    color: #e8ecf5;
+    text-align: left;
+  }
+  #start ol b { font-weight: 800; }
+  .fire-t { color: #ffab5e; }
+  .ice-t  { color: #8fd8ff; }
+  #startBtn {
+    pointer-events: auto;
+    font-family: inherit;
+    font-size: clamp(17px, 2.2vw, 23px);
+    font-weight: 800;
+    letter-spacing: .12em;
+    color: #fff;
+    padding: 16px 54px;
+    border: 2px solid rgba(255,255,255,.7);
+    border-radius: 999px;
+    background: linear-gradient(100deg, rgba(255,110,20,.55), rgba(30,120,255,.55));
+    cursor: pointer;
+    transition: transform .12s, box-shadow .12s;
+    box-shadow: 0 0 22px rgba(255,140,50,.35), 0 0 22px rgba(60,150,255,.35);
+  }
+  #startBtn:hover { transform: scale(1.05); box-shadow: 0 0 34px rgba(255,140,50,.6), 0 0 34px rgba(60,150,255,.6); }
+  #startBtn:disabled { opacity: .55; cursor: wait; transform: none; }
+  #start .note {
+    font-size: 12px; color: #8892a8; line-height: 1.8;
+  }
+  #error {
+    display: none;
+    max-width: 640px;
+    background: rgba(160,30,30,.25);
+    border: 1px solid rgba(255,120,120,.6);
+    border-radius: 10px;
+    padding: 14px 20px;
+    font-size: 14px;
+    line-height: 1.9;
+    color: #ffd9d9;
+    text-align: left;
+  }
+  #error code { background: rgba(0,0,0,.5); padding: 2px 8px; border-radius: 4px; font-size: 13px; }
+</style>
+</head>
+<body>
+
+<video id="video" playsinline muted></video>
+<canvas id="canvas"></canvas>
+
+<div id="hud">
+  <div id="hint"></div>
+  <div class="gauge" id="gaugeIce">
+    <div class="label">❄️ マヒャド（左手）</div>
+    <div class="bar"><div class="fill"></div></div>
+  </div>
+  <div class="gauge" id="gaugeFuse">
+    <div class="label">⚡ 融合</div>
+    <div class="bar"><div class="fill"></div></div>
+  </div>
+  <div class="gauge" id="gaugeFire">
+    <div class="label">🔥 メラゾーマ（右手）</div>
+    <div class="bar"><div class="fill"></div></div>
+  </div>
+</div>
+
+<div id="start">
+  <div class="sub">極大消滅呪文シミュレーター</div>
+  <h1>メドローア</h1>
+  <ol>
+    <li><b>①</b> <span class="fire-t"><b>右手を開く</b></span> → メラゾーマをチャージ 🔥</li>
+    <li><b>②</b> <span class="ice-t"><b>左手を開く</b></span> → マヒャドをチャージ ❄️</li>
+    <li><b>③</b> <b>両手を合わせる</b> → 炎と氷を融合 ⚡</li>
+    <li><b>④</b> <b>勢いよく突き出す</b> → <b>発射！！</b></li>
+  </ol>
+  <button id="startBtn">カメラを起動して詠唱開始</button>
+  <div class="note">
+    カメラ映像はブラウザ内で処理され、外部には送信されません。<br>
+    手の検出モデル（MediaPipe）の読み込みにインターネット接続が必要です。
+  </div>
+  <div id="error"></div>
+</div>
+
+<script type="module">
+import { FilesetResolver, HandLandmarker } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14";
+
+/* ============================================================
+   基本セットアップ
+   ============================================================ */
+const video   = document.getElementById("video");
+const canvas  = document.getElementById("canvas");
+const ctx     = canvas.getContext("2d");
+const hud     = document.getElementById("hud");
+const hintEl  = document.getElementById("hint");
+const startEl = document.getElementById("start");
+const startBtn = document.getElementById("startBtn");
+const errorEl = document.getElementById("error");
+const fillFire = document.querySelector("#gaugeFire .fill");
+const fillIce  = document.querySelector("#gaugeIce .fill");
+const fillFuse = document.querySelector("#gaugeFuse .fill");
+
+let cw = 0, ch = 0, dpr = 1;
+function resize() {
+  dpr = Math.min(window.devicePixelRatio || 1, 2);
+  cw = window.innerWidth;
+  ch = window.innerHeight;
+  canvas.width  = Math.round(cw * dpr);
+  canvas.height = Math.round(ch * dpr);
+}
+window.addEventListener("resize", resize);
+resize();
+
+/* 動画→キャンバス座標変換（cover フィット + 左右反転ミラー表示） */
+let vw = 0, vh = 0, vScale = 1, offX = 0, offY = 0;
+function updateVideoMapping() {
+  vw = video.videoWidth || 1280;
+  vh = video.videoHeight || 720;
+  vScale = Math.max(cw / vw, ch / vh);
+  offX = (cw - vw * vScale) / 2;
+  offY = (ch - vh * vScale) / 2;
+}
+function toCanvas(nx, ny) {
+  return { x: cw - (offX + nx * vw * vScale), y: offY + ny * vh * vScale };
+}
+
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const dist  = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+const easeOutCubic = t => 1 - Math.pow(1 - t, 3);
+
+/* ============================================================
+   効果音（Web Audio・全て合成音なので外部ファイル不要）
+   ============================================================ */
+const SFX = {
+  ctx: null, master: null,
+  noiseBuf: null,
+  fireGain: null, iceGain: null,
+  fuseOsc1: null, fuseOsc2: null, fuseGain: null,
+  lastPing: 0,
+
+  init() {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    this.ctx = new AC();
+    const comp = this.ctx.createDynamicsCompressor();
+    this.master = this.ctx.createGain();
+    this.master.gain.value = 0.9;
+    this.master.connect(comp).connect(this.ctx.destination);
+
+    // ホワイトノイズバッファ
+    const len = this.ctx.sampleRate * 2;
+    this.noiseBuf = this.ctx.createBuffer(1, len, this.ctx.sampleRate);
+    const d = this.noiseBuf.getChannelData(0);
+    for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+
+    // 🔥 炎：ローパスノイズ（ゴォォ…）
+    const fireSrc = this.ctx.createBufferSource();
+    fireSrc.buffer = this.noiseBuf; fireSrc.loop = true;
+    const fireLP = this.ctx.createBiquadFilter();
+    fireLP.type = "lowpass"; fireLP.frequency.value = 320; fireLP.Q.value = 1.2;
+    this.fireGain = this.ctx.createGain(); this.fireGain.gain.value = 0;
+    fireSrc.connect(fireLP).connect(this.fireGain).connect(this.master);
+    fireSrc.start();
+
+    // ❄️ 氷：ハイパスノイズ（シャラララ…）
+    const iceSrc = this.ctx.createBufferSource();
+    iceSrc.buffer = this.noiseBuf; iceSrc.loop = true;
+    const iceHP = this.ctx.createBiquadFilter();
+    iceHP.type = "highpass"; iceHP.frequency.value = 6000;
+    this.iceGain = this.ctx.createGain(); this.iceGain.gain.value = 0;
+    iceSrc.connect(iceHP).connect(this.iceGain).connect(this.master);
+    iceSrc.start();
+
+    // ⚡ 融合：うなるハム音
+    this.fuseGain = this.ctx.createGain(); this.fuseGain.gain.value = 0;
+    this.fuseOsc1 = this.ctx.createOscillator();
+    this.fuseOsc2 = this.ctx.createOscillator();
+    this.fuseOsc1.type = "sawtooth"; this.fuseOsc2.type = "sine";
+    this.fuseOsc1.frequency.value = 120; this.fuseOsc2.frequency.value = 121;
+    const fuseLP = this.ctx.createBiquadFilter();
+    fuseLP.type = "lowpass"; fuseLP.frequency.value = 900;
+    this.fuseOsc1.connect(fuseLP); this.fuseOsc2.connect(fuseLP);
+    fuseLP.connect(this.fuseGain).connect(this.master);
+    this.fuseOsc1.start(); this.fuseOsc2.start();
+  },
+
+  update(fire, ice, fusion, ready, now) {
+    if (!this.ctx) return;
+    const t = this.ctx.currentTime;
+    // 炎はゆらぎを加えてパチパチ感を出す
+    this.fireGain.gain.setTargetAtTime(fire * (0.14 + 0.08 * Math.random()), t, 0.06);
+    this.iceGain.gain.setTargetAtTime(ice * (0.05 + 0.03 * Math.random()), t, 0.08);
+    let fg = fusion * 0.16;
+    if (ready) fg *= 1 + 0.35 * Math.sin(now * 22);
+    this.fuseGain.gain.setTargetAtTime(fg, t, 0.05);
+    const f = 130 + fusion * 620;
+    this.fuseOsc1.frequency.setTargetAtTime(f, t, 0.08);
+    this.fuseOsc2.frequency.setTargetAtTime(f * 1.505, t, 0.08);
+    // 氷チャージ中はキラキラ音を散らす
+    if (ice > 0.25 && now - this.lastPing > 0.13) {
+      this.lastPing = now;
+      this.ping(2400 + Math.random() * 3600, 0.03 * ice, 0.12, "sine");
+    }
+  },
+
+  ping(freq, vol, dur, type = "sine") {
+    if (!this.ctx) return;
+    const t = this.ctx.currentTime;
+    const o = this.ctx.createOscillator();
+    const g = this.ctx.createGain();
+    o.type = type; o.frequency.value = freq;
+    g.gain.setValueAtTime(vol, t);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.connect(g).connect(this.master);
+    o.start(t); o.stop(t + dur + 0.05);
+  },
+
+  chargeComplete(kind) {
+    if (kind === "fire") { this.ping(280, 0.25, 0.3, "sawtooth"); this.ping(560, 0.15, 0.25, "square"); }
+    else { this.ping(2100, 0.2, 0.4, "sine"); this.ping(3150, 0.12, 0.5, "sine"); }
+  },
+
+  fusionReady() {
+    this.ping(520, 0.25, 0.5, "sawtooth");
+    this.ping(780, 0.2, 0.6, "sine");
+    this.ping(1040, 0.15, 0.7, "sine");
+  },
+
+  blast() {
+    if (!this.ctx) return;
+    const t = this.ctx.currentTime;
+    // 轟音ノイズ
+    const src = this.ctx.createBufferSource();
+    src.buffer = this.noiseBuf; src.loop = true;
+    const lp = this.ctx.createBiquadFilter();
+    lp.type = "lowpass";
+    lp.frequency.setValueAtTime(9000, t);
+    lp.frequency.exponentialRampToValueAtTime(180, t + 1.4);
+    const g = this.ctx.createGain();
+    g.gain.setValueAtTime(0.85, t);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 1.6);
+    src.connect(lp).connect(g).connect(this.master);
+    src.start(t); src.stop(t + 1.7);
+    // 重低音
+    const sub = this.ctx.createOscillator();
+    sub.type = "sine";
+    sub.frequency.setValueAtTime(85, t);
+    sub.frequency.exponentialRampToValueAtTime(32, t + 1.1);
+    const sg = this.ctx.createGain();
+    sg.gain.setValueAtTime(0.7, t);
+    sg.gain.exponentialRampToValueAtTime(0.0001, t + 1.3);
+    sub.connect(sg).connect(this.master);
+    sub.start(t); sub.stop(t + 1.4);
+    // アタック
+    const crk = this.ctx.createOscillator();
+    crk.type = "square";
+    crk.frequency.setValueAtTime(420, t);
+    crk.frequency.exponentialRampToValueAtTime(55, t + 0.16);
+    const cg = this.ctx.createGain();
+    cg.gain.setValueAtTime(0.4, t);
+    cg.gain.exponentialRampToValueAtTime(0.0001, t + 0.22);
+    crk.connect(cg).connect(this.master);
+    crk.start(t); crk.stop(t + 0.25);
+  },
+};
+
+/* ============================================================
+   パーティクル
+   ============================================================ */
+const particles = [];
+const MAX_PARTICLES = 700;
+
+function spawn(p) {
+  if (particles.length < MAX_PARTICLES) particles.push(p);
+}
+function spawnFire(x, y, scale, amount) {
+  for (let i = 0; i < amount; i++) {
+    const a = Math.random() * Math.PI * 2;
+    const r = Math.random() * scale * 0.7;
+    spawn({
+      kind: "fire",
+      x: x + Math.cos(a) * r, y: y + Math.sin(a) * r,
+      vx: (Math.random() - 0.5) * 60,
+      vy: -60 - Math.random() * 140,
+      life: 0, max: 0.4 + Math.random() * 0.4,
+      size: scale * (0.10 + Math.random() * 0.16),
+    });
+  }
+}
+function spawnIce(x, y, scale, amount) {
+  for (let i = 0; i < amount; i++) {
+    const a = Math.random() * Math.PI * 2;
+    const r = Math.random() * scale * 0.9;
+    spawn({
+      kind: "ice",
+      x: x + Math.cos(a) * r, y: y + Math.sin(a) * r,
+      vx: (Math.random() - 0.5) * 90,
+      vy: (Math.random() - 0.5) * 90 + 20,
+      life: 0, max: 0.5 + Math.random() * 0.5,
+      size: scale * (0.05 + Math.random() * 0.09),
+      rot: Math.random() * Math.PI,
+    });
+  }
+}
+function spawnFuse(x, y, scale, level, amount) {
+  for (let i = 0; i < amount; i++) {
+    const a = Math.random() * Math.PI * 2;
+    const r = scale * (1.6 + Math.random() * 1.4) * (1.2 - level * 0.5);
+    const px = x + Math.cos(a) * r, py = y + Math.sin(a) * r;
+    spawn({
+      kind: Math.random() < 0.5 ? "fuseF" : "fuseI",
+      x: px, y: py,
+      vx: (x - px) * 3.2, vy: (y - py) * 3.2, // 中心に収束
+      life: 0, max: 0.3,
+      size: scale * (0.06 + Math.random() * 0.1),
+    });
+  }
+}
+function spawnSpark(x, y, dirX, dirY, speed, scale, amount, kind) {
+  for (let i = 0; i < amount; i++) {
+    const jitter = 0.9;
+    spawn({
+      kind,
+      x, y,
+      vx: dirX * speed * (0.4 + Math.random()) + (Math.random() - 0.5) * speed * jitter,
+      vy: dirY * speed * (0.4 + Math.random()) + (Math.random() - 0.5) * speed * jitter,
+      life: 0, max: 0.35 + Math.random() * 0.45,
+      size: scale * (0.05 + Math.random() * 0.12),
+    });
+  }
+}
+
+function updateParticles(dt) {
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const p = particles[i];
+    p.life += dt;
+    if (p.life >= p.max) { particles.splice(i, 1); continue; }
+    p.x += p.vx * dt;
+    p.y += p.vy * dt;
+    if (p.kind === "fire") p.vy -= 120 * dt;   // 炎は上昇加速
+    if (p.kind === "ice")  p.vy += 40 * dt;    // 氷はゆっくり落ちる
+  }
+}
+
+function drawParticles() {
+  ctx.save();
+  ctx.globalCompositeOperation = "lighter";
+  for (const p of particles) {
+    const k = 1 - p.life / p.max;
+    if (p.kind === "fire" || p.kind === "fuseF" || p.kind === "sparkF") {
+      const g = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.size * 2.2);
+      g.addColorStop(0, `rgba(255,240,180,${0.85 * k})`);
+      g.addColorStop(0.4, `rgba(255,140,40,${0.55 * k})`);
+      g.addColorStop(1, "rgba(255,60,0,0)");
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.size * 2.2, 0, Math.PI * 2);
+      ctx.fill();
+    } else if (p.kind === "ice" || p.kind === "fuseI" || p.kind === "sparkI") {
+      ctx.strokeStyle = `rgba(190,235,255,${0.9 * k})`;
+      ctx.lineWidth = Math.max(1, p.size * 0.3);
+      const s = p.size * (0.8 + 0.4 * k);
+      const rot = (p.rot || 0) + p.life * 2;
+      ctx.save();
+      ctx.translate(p.x, p.y);
+      ctx.rotate(rot);
+      ctx.beginPath();
+      ctx.moveTo(-s, 0); ctx.lineTo(s, 0);
+      ctx.moveTo(0, -s); ctx.lineTo(0, s);
+      ctx.stroke();
+      ctx.restore();
+    } else { // spark（白）
+      ctx.fillStyle = `rgba(255,255,255,${0.9 * k})`;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, Math.max(1, p.size * k), 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+  ctx.restore();
+}
+
+/* ============================================================
+   ジェスチャー解析
+   ============================================================ */
+function analyzeHand(landmarksNorm) {
+  const lm = landmarksNorm.map(p => toCanvas(p.x, p.y));
+  const palm = {
+    x: (lm[0].x + lm[5].x + lm[9].x + lm[13].x + lm[17].x) / 5,
+    y: (lm[0].y + lm[5].y + lm[9].y + lm[13].y + lm[17].y) / 5,
+  };
+  const scale = dist(lm[0], lm[9]); // 手首→中指付け根 ＝ 手の大きさ
+  let extended = 0;
+  for (const [pip, tip] of [[6, 8], [10, 12], [14, 16], [18, 20]]) {
+    if (dist(lm[tip], lm[0]) > dist(lm[pip], lm[0]) * 1.12) extended++;
+  }
+  return { lm, palm, scale, open: extended >= 3 };
+}
+
+/* ============================================================
+   ゲームステート
+   ============================================================ */
+const S = {
+  phase: "idle",        // idle | fuse | ready | fire | cool
+  fire: 0, ice: 0,      // チャージ量 0..1
+  fusion: 0,            // 融合量 0..1
+  fusePt: { x: 0, y: 0 },
+  fuseScale: 60,
+  readySince: 0,
+  lostFrames: 0,
+  coolUntil: 0,
+  anim: null,           // 発射アニメ { mode, p0, dir, w0, t0 }
+  hist: [],             // 融合点の履歴 [{t,x,y,scale}]
+  shots: 0,
+};
+let hintText = "";
+let prevFire = 0, prevIce = 0;
+
+function setHint(s) {
+  if (s !== hintText) { hintText = s; hintEl.textContent = s; }
+}
+
+function updateState(hands, now, dt) {
+  // ---- 発射中／クールダウン ----
+  if (S.phase === "fire") {
+    if (now - S.anim.t0 > 1.45) {
+      S.phase = "cool";
+      S.coolUntil = now + 1.1;
+      S.fire = S.ice = S.fusion = 0;
+      S.hist = [];
+    }
+    return;
+  }
+  if (S.phase === "cool") {
+    setHint("……決まったな。");
+    if (now > S.coolUntil) S.phase = "idle";
+    return;
+  }
+
+  // ---- 手の割り当て（ミラー表示なので画面右側＝ユーザーの右手）----
+  let fireHand = null, iceHand = null;
+  if (hands.length >= 2) {
+    const [a, b] = hands;
+    if (a.palm.x > b.palm.x) { fireHand = a; iceHand = b; }
+    else { fireHand = b; iceHand = a; }
+  } else if (hands.length === 1) {
+    if (hands[0].palm.x > cw / 2) fireHand = hands[0];
+    else iceHand = hands[0];
+  }
+
+  // ---- READY 中に手を見失う ＝ 高速突き出しとみなして発射 ----
+  if (S.phase === "ready") {
+    if (hands.length < 2) {
+      S.lostFrames++;
+      if (S.lostFrames >= 4) { triggerFire(now, null); return; }
+    } else {
+      S.lostFrames = 0;
+    }
+  }
+
+  // ---- チャージ（融合が始まったらチャージは維持）----
+  const fusing = S.phase === "fuse" || S.phase === "ready";
+  if (!fusing) {
+    S.fire = clamp(S.fire + (fireHand && fireHand.open ? dt / 0.6 : -dt / 0.5), 0, 1);
+    S.ice  = clamp(S.ice  + (iceHand  && iceHand.open  ? dt / 0.6 : -dt / 0.5), 0, 1);
+    if (prevFire < 1 && S.fire >= 1) SFX.chargeComplete("fire");
+    if (prevIce  < 1 && S.ice  >= 1) SFX.chargeComplete("ice");
+  } else {
+    S.fire = S.ice = 1;
+  }
+  prevFire = S.fire; prevIce = S.ice;
+
+  // ---- 融合判定 ----
+  if (fireHand && iceHand) {
+    const d = dist(fireHand.palm, iceHand.palm);
+    const avgScale = (fireHand.scale + iceHand.scale) / 2;
+    const closeIn  = d < avgScale * 2.1;
+    const closeOut = d < avgScale * 3.2;
+
+    S.fusePt = {
+      x: (fireHand.palm.x + iceHand.palm.x) / 2,
+      y: (fireHand.palm.y + iceHand.palm.y) / 2,
+    };
+    S.fuseScale = avgScale;
+
+    // 融合点の速度履歴（突き出し検出用）
+    S.hist.push({ t: now, x: S.fusePt.x, y: S.fusePt.y, scale: avgScale });
+    while (S.hist.length > 8 || (S.hist.length && now - S.hist[0].t > 0.22)) S.hist.shift();
+
+    if (S.phase === "idle") {
+      if (S.fire >= 0.95 && S.ice >= 0.95 && closeIn) {
+        S.phase = "fuse";
+        S.fusion = 0.001;
+      }
+    } else if (S.phase === "fuse") {
+      if (closeOut) {
+        S.fusion = clamp(S.fusion + dt / 0.7, 0, 1);
+        if (S.fusion >= 1) {
+          S.phase = "ready";
+          S.readySince = now;
+          S.lostFrames = 0;
+          SFX.fusionReady();
+        }
+      } else {
+        S.fusion = clamp(S.fusion - dt / 0.4, 0, 1);
+        if (S.fusion <= 0) S.phase = "idle";
+      }
+    } else if (S.phase === "ready") {
+      if (!closeOut) {
+        // ゆっくり離した → 霧散
+        S.fusion = clamp(S.fusion - dt / 0.5, 0, 1);
+        if (S.fusion <= 0) S.phase = "idle";
+      } else {
+        S.fusion = 1;
+      }
+      // 突き出し検出（画面内の高速移動 or 手が急拡大＝カメラ方向への突き）
+      if (now - S.readySince > 0.12 && S.hist.length >= 3) {
+        const h0 = S.hist[0], h1 = S.hist[S.hist.length - 1];
+        const span = Math.max(h1.t - h0.t, 0.01);
+        const vx = (h1.x - h0.x) / span;
+        const vy = (h1.y - h0.y) / span;
+        const speedNorm = Math.hypot(vx, vy) / cw;            // 画面幅/秒
+        const scaleRate = (h1.scale - h0.scale) / span / Math.max(h0.scale, 1); // 相対拡大率/秒
+        if (speedNorm > 1.05) {
+          const mag = Math.hypot(vx, vy);
+          triggerFire(now, { x: vx / mag, y: vy / mag });
+          return;
+        }
+        if (scaleRate > 1.25) { triggerFire(now, null); return; }
+      }
+    }
+  } else {
+    // 手が2本そろっていない
+    if (S.phase === "fuse") {
+      S.fusion = clamp(S.fusion - dt / 0.35, 0, 1);
+      if (S.fusion <= 0) S.phase = "idle";
+    }
+    S.hist = [];
+  }
+
+  // ---- ヒント ----
+  if (hands.length === 0) setHint("両手をカメラに映してください");
+  else if (S.phase === "ready") setHint("前へ突き出せ！！");
+  else if (S.phase === "fuse") setHint("融合中……両手をそのまま！");
+  else if (S.fire >= 1 && S.ice >= 1) setHint("両手を合わせて融合させろ！");
+  else setHint("両手を開いてチャージ！　🔥右手：メラゾーマ　❄️左手：マヒャド");
+}
+
+function triggerFire(now, dir) {
+  S.phase = "fire";
+  S.anim = {
+    mode: dir ? "beam" : "blast",
+    p0: { ...S.fusePt },
+    dir: dir || { x: 0, y: 0 },
+    w0: clamp(S.fuseScale * 0.55, 18, 55),
+    t0: now,
+  };
+  S.shots++;
+  SFX.blast();
+  setHint("");
+  // 発射点から白いスパークを撒き散らす
+  const d = dir || { x: 0, y: -0.4 };
+  spawnSpark(S.fusePt.x, S.fusePt.y, d.x, d.y, 900, S.fuseScale, 40, "spark");
+  spawnSpark(S.fusePt.x, S.fusePt.y, d.x, d.y, 700, S.fuseScale, 15, "sparkF");
+  spawnSpark(S.fusePt.x, S.fusePt.y, d.x, d.y, 700, S.fuseScale, 15, "sparkI");
+}
+
+/* ============================================================
+   描画
+   ============================================================ */
+function drawHandDots(hand, color) {
+  ctx.save();
+  ctx.globalCompositeOperation = "lighter";
+  ctx.fillStyle = color;
+  for (const p of hand.lm) {
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, 2.5, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+function drawAura(palm, scale, charge, isFire, now) {
+  if (charge <= 0.02) return;
+  ctx.save();
+  ctx.globalCompositeOperation = "lighter";
+  const r = scale * (0.6 + 1.3 * charge) * (1 + 0.06 * Math.sin(now * (isFire ? 17 : 11)));
+  const g = ctx.createRadialGradient(palm.x, palm.y, 0, palm.x, palm.y, r);
+  if (isFire) {
+    g.addColorStop(0, `rgba(255,235,170,${0.75 * charge})`);
+    g.addColorStop(0.45, `rgba(255,130,30,${0.5 * charge})`);
+    g.addColorStop(1, "rgba(255,50,0,0)");
+  } else {
+    g.addColorStop(0, `rgba(230,250,255,${0.7 * charge})`);
+    g.addColorStop(0.45, `rgba(110,190,255,${0.45 * charge})`);
+    g.addColorStop(1, "rgba(40,120,255,0)");
+  }
+  ctx.fillStyle = g;
+  ctx.beginPath();
+  ctx.arc(palm.x, palm.y, r, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+
+  // 呪文名ラベル
+  const name = isFire ? "メラゾーマ" : "マヒャド";
+  ctx.save();
+  ctx.font = `800 ${Math.round(clamp(scale * 0.32, 14, 26))}px "Hiragino Sans", sans-serif`;
+  ctx.textAlign = "center";
+  ctx.globalAlpha = clamp(charge * 1.4, 0, 1);
+  ctx.fillStyle = isFire ? "#ffd9a0" : "#c9ecff";
+  ctx.shadowColor = isFire ? "#ff7a1a" : "#4db2ff";
+  ctx.shadowBlur = 14;
+  ctx.fillText(charge >= 1 ? name + "！" : name, palm.x, palm.y - scale * 1.9);
+  ctx.restore();
+}
+
+function drawFusionBall(now) {
+  const { fusePt: p, fuseScale: sc, fusion: lv } = S;
+  if (lv <= 0) return;
+  ctx.save();
+  ctx.globalCompositeOperation = "lighter";
+
+  // 周回する炎と氷の光球（融合が進むほど中心に近づく）
+  const orbitR = sc * (1.5 - lv * 1.0);
+  const ang = now * 7;
+  for (const [phase, colA, colB] of [
+    [0, "rgba(255,235,170,", "rgba(255,110,20,"],
+    [Math.PI, "rgba(235,250,255,", "rgba(70,170,255,"],
+  ]) {
+    const ox = p.x + Math.cos(ang + phase) * orbitR;
+    const oy = p.y + Math.sin(ang + phase) * orbitR * 0.6;
+    const r = sc * (0.35 + lv * 0.15);
+    const g = ctx.createRadialGradient(ox, oy, 0, ox, oy, r);
+    g.addColorStop(0, colA + (0.9 * Math.min(lv * 2, 1)) + ")");
+    g.addColorStop(0.6, colB + (0.5 * Math.min(lv * 2, 1)) + ")");
+    g.addColorStop(1, colB + "0)");
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(ox, oy, r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // 白熱コア
+  const pulse = S.phase === "ready" ? 1 + 0.12 * Math.sin(now * 24) : 1;
+  const coreR = sc * (0.25 + lv * 0.85) * pulse;
+  const g = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, coreR);
+  g.addColorStop(0, `rgba(255,255,255,${0.95 * lv})`);
+  g.addColorStop(0.5, `rgba(255,250,220,${0.55 * lv})`);
+  g.addColorStop(1, "rgba(255,240,200,0)");
+  ctx.fillStyle = g;
+  ctx.beginPath();
+  ctx.arc(p.x, p.y, coreR, 0, Math.PI * 2);
+  ctx.fill();
+
+  // READY リング
+  if (S.phase === "ready") {
+    ctx.strokeStyle = `rgba(255,255,255,${0.5 + 0.3 * Math.sin(now * 24)})`;
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, coreR * 1.35, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function drawLine(x0, y0, x1, y1, width, style) {
+  ctx.strokeStyle = style;
+  ctx.lineWidth = Math.max(width, 0.5);
+  ctx.lineCap = "round";
+  ctx.beginPath();
+  ctx.moveTo(x0, y0);
+  ctx.lineTo(x1, y1);
+  ctx.stroke();
+}
+
+function drawFireAnim(now) {
+  const a = S.anim;
+  const e = now - a.t0;
+  const diag = Math.hypot(cw, ch);
+  const fade = e > 1.0 ? clamp(1 - (e - 1.0) / 0.45, 0, 1) : 1;
+
+  ctx.save();
+  ctx.globalCompositeOperation = "lighter";
+
+  if (a.mode === "beam") {
+    const { p0, dir } = a;
+    const len = easeOutCubic(clamp(e / 0.16, 0, 1)) * diag * 1.4;
+    const p1 = { x: p0.x + dir.x * len, y: p0.y + dir.y * len };
+    const n = { x: -dir.y, y: dir.x };
+    const w = a.w0 * (1 + 0.15 * Math.sin(e * 42)) * (0.6 + 0.4 * fade);
+
+    // 外縁：炎側と氷側に分かれた二重ビーム（原作の融合表現）
+    ctx.globalAlpha = fade;
+    drawLine(p0.x + n.x * w * 0.9, p0.y + n.y * w * 0.9,
+             p1.x + n.x * w * 0.9, p1.y + n.y * w * 0.9, w * 2.6, "rgba(255,110,25,0.30)");
+    drawLine(p0.x - n.x * w * 0.9, p0.y - n.y * w * 0.9,
+             p1.x - n.x * w * 0.9, p1.y - n.y * w * 0.9, w * 2.6, "rgba(60,160,255,0.30)");
+    drawLine(p0.x, p0.y, p1.x, p1.y, w * 1.8, "rgba(255,235,170,0.55)");
+    drawLine(p0.x, p0.y, p1.x, p1.y, w * 0.95, "rgba(255,255,255,0.95)");
+
+    // 螺旋（炎と氷が絡み合う）
+    const step = 26;
+    for (let s = 0; s < len; s += step) {
+      const ph = s * 0.045 - e * 34;
+      const off = Math.sin(ph) * w * 1.5;
+      const bx = p0.x + dir.x * s, by = p0.y + dir.y * s;
+      ctx.fillStyle = "rgba(255,160,60,0.65)";
+      ctx.beginPath();
+      ctx.arc(bx + n.x * off, by + n.y * off, w * 0.3, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = "rgba(120,200,255,0.65)";
+      ctx.beginPath();
+      ctx.arc(bx - n.x * off, by - n.y * off, w * 0.3, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // 発射点＆先端の光球
+    for (const [pt, rr] of [[p0, w * 4], [p1, w * 2.6]]) {
+      const g = ctx.createRadialGradient(pt.x, pt.y, 0, pt.x, pt.y, rr);
+      g.addColorStop(0, `rgba(255,255,255,${0.9 * fade})`);
+      g.addColorStop(1, "rgba(255,255,255,0)");
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.arc(pt.x, pt.y, rr, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+
+    // ビーム沿いのスパーク
+    if (e < 1.0 && Math.random() < 0.8) {
+      const s = Math.random() * len;
+      spawnSpark(p0.x + dir.x * s, p0.y + dir.y * s, n.x, n.y, 250, a.w0, 2,
+                 Math.random() < 0.5 ? "sparkF" : "sparkI");
+    }
+  } else {
+    // blast：カメラ（＝視聴者）に向かって撃つ → 全画面を呑み込む
+    const { p0 } = a;
+    const k = easeOutCubic(clamp(e / 0.9, 0, 1));
+    const R = k * diag * 1.15;
+    // 拡大する二重リング
+    ctx.globalAlpha = fade;
+    ctx.lineWidth = 34 * (1 - k * 0.5);
+    ctx.strokeStyle = "rgba(255,120,30,0.55)";
+    ctx.beginPath(); ctx.arc(p0.x, p0.y, R, 0, Math.PI * 2); ctx.stroke();
+    ctx.strokeStyle = "rgba(80,170,255,0.55)";
+    ctx.beginPath(); ctx.arc(p0.x, p0.y, R * 0.82, 0, Math.PI * 2); ctx.stroke();
+    // 膨張する白熱コア
+    const coreAlpha = e < 0.3 ? e / 0.3 : clamp(1 - (e - 0.3) / 0.9, 0, 1);
+    const g = ctx.createRadialGradient(p0.x, p0.y, 0, p0.x, p0.y, Math.max(R * 0.9, 1));
+    g.addColorStop(0, `rgba(255,255,255,${0.95 * coreAlpha})`);
+    g.addColorStop(0.6, `rgba(255,245,215,${0.6 * coreAlpha})`);
+    g.addColorStop(1, "rgba(255,255,255,0)");
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(p0.x, p0.y, Math.max(R * 0.9, 1), 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+  }
+  ctx.restore();
+
+  // 全画面フラッシュ
+  const flash = Math.max(0, 0.55 - e * 1.8);
+  if (flash > 0) {
+    ctx.fillStyle = `rgba(255,255,255,${flash})`;
+    ctx.fillRect(0, 0, cw, ch);
+  }
+
+  // 「メドローア！！」
+  if (e > 0.06 && e < 1.3) {
+    const tk = clamp((e - 0.06) / 0.12, 0, 1);
+    const alpha = e > 1.0 ? 1 - (e - 1.0) / 0.3 : 1;
+    ctx.save();
+    ctx.translate(cw / 2, ch * 0.24);
+    ctx.scale(0.6 + 0.4 * easeOutCubic(tk), 0.6 + 0.4 * easeOutCubic(tk));
+    ctx.font = `900 ${Math.round(clamp(cw * 0.085, 40, 110))}px "Hiragino Sans", sans-serif`;
+    ctx.textAlign = "center";
+    ctx.globalAlpha = alpha;
+    ctx.shadowColor = "#ff8a20";
+    ctx.shadowBlur = 30;
+    ctx.strokeStyle = "rgba(40,140,255,0.9)";
+    ctx.lineWidth = 8;
+    ctx.strokeText("メドローア！！", 0, 0);
+    ctx.shadowColor = "#4db2ff";
+    ctx.fillStyle = "#ffffff";
+    ctx.fillText("メドローア！！", 0, 0);
+    ctx.restore();
+  }
+}
+
+/* ============================================================
+   メインループ
+   ============================================================ */
+let handLandmarker = null;
+let lastVideoTime = -1;
+let lastT = 0;
+let latestHands = [];
+
+function loop(tms) {
+  requestAnimationFrame(loop);
+  const now = tms / 1000;
+  const dt = clamp(now - lastT, 0.001, 0.05);
+  lastT = now;
+
+  if (video.readyState < 2) return;
+  updateVideoMapping();
+
+  // ---- 手検出（新フレームのみ）----
+  if (handLandmarker && video.currentTime !== lastVideoTime) {
+    lastVideoTime = video.currentTime;
+    try {
+      const res = handLandmarker.detectForVideo(video, performance.now());
+      latestHands = (res.landmarks || []).map(analyzeHand);
+    } catch (err) {
+      console.error(err);
+    }
+  }
+  const hands = latestHands;
+
+  // ---- 状態更新 ----
+  updateState(hands, now, dt);
+  updateParticles(dt);
+  SFX.update(S.fire, S.ice, S.fusion, S.phase === "ready", now);
+
+  // ---- チャージ中のパーティクル生成 ----
+  const fusing = S.phase === "fuse" || S.phase === "ready";
+  if (!fusing && S.phase !== "fire" && S.phase !== "cool") {
+    let fireHand = null, iceHand = null;
+    if (hands.length >= 2) {
+      const [a, b] = hands;
+      if (a.palm.x > b.palm.x) { fireHand = a; iceHand = b; }
+      else { fireHand = b; iceHand = a; }
+    } else if (hands.length === 1) {
+      if (hands[0].palm.x > cw / 2) fireHand = hands[0]; else iceHand = hands[0];
+    }
+    if (fireHand && S.fire > 0.1) spawnFire(fireHand.palm.x, fireHand.palm.y, fireHand.scale, Math.round(S.fire * 3));
+    if (iceHand && S.ice > 0.1)  spawnIce(iceHand.palm.x, iceHand.palm.y, iceHand.scale, Math.round(S.ice * 2));
+  }
+  if (fusing) spawnFuse(S.fusePt.x, S.fusePt.y, S.fuseScale, S.fusion, 3);
+
+  // ---- 描画 ----
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, cw, ch);
+
+  // 発射時の画面シェイク
+  let shakeX = 0, shakeY = 0;
+  if (S.phase === "fire") {
+    const e = now - S.anim.t0;
+    const amp = 16 * Math.max(0, 1 - e / 0.55);
+    shakeX = (Math.random() - 0.5) * 2 * amp;
+    shakeY = (Math.random() - 0.5) * 2 * amp;
+  }
+  ctx.save();
+  ctx.translate(shakeX, shakeY);
+
+  // カメラ映像（ミラー・coverフィット）
+  ctx.save();
+  ctx.translate(cw, 0);
+  ctx.scale(-1, 1);
+  ctx.drawImage(video, offX, offY, vw * vScale, vh * vScale);
+  ctx.restore();
+
+  // 薄暗くしてエフェクトを映えさせる
+  const dim = 0.15 + 0.25 * S.fusion;
+  ctx.fillStyle = `rgba(2,4,18,${dim})`;
+  ctx.fillRect(-30, -30, cw + 60, ch + 60);
+
+  // 手のトラッキング点
+  if (S.phase !== "fire") {
+    for (const h of hands) drawHandDots(h, "rgba(255,255,255,0.35)");
+  }
+
+  // チャージオーラ
+  if (!fusing && S.phase !== "fire" && S.phase !== "cool") {
+    let fireHand = null, iceHand = null;
+    if (hands.length >= 2) {
+      const [a, b] = hands;
+      if (a.palm.x > b.palm.x) { fireHand = a; iceHand = b; }
+      else { fireHand = b; iceHand = a; }
+    } else if (hands.length === 1) {
+      if (hands[0].palm.x > cw / 2) fireHand = hands[0]; else iceHand = hands[0];
+    }
+    if (fireHand) drawAura(fireHand.palm, fireHand.scale, S.fire, true, now);
+    if (iceHand)  drawAura(iceHand.palm, iceHand.scale, S.ice, false, now);
+  }
+
+  drawParticles();
+  if (fusing) drawFusionBall(now);
+  if (S.phase === "fire") drawFireAnim(now);
+
+  ctx.restore();
+
+  // ---- HUD ゲージ ----
+  fillFire.style.width = `${S.fire * 100}%`;
+  fillIce.style.width  = `${S.ice * 100}%`;
+  fillFuse.style.width = `${S.fusion * 100}%`;
+}
+
+/* ============================================================
+   起動
+   ============================================================ */
+function showError(html) {
+  errorEl.innerHTML = html;
+  errorEl.style.display = "block";
+  startBtn.disabled = false;
+  startBtn.textContent = "再試行";
+}
+
+// モデルはページ表示直後から先読みしておく
+const landmarkerPromise = (async () => {
+  const vision = await FilesetResolver.forVisionTasks(
+    "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm"
+  );
+  const opts = (delegate) => ({
+    baseOptions: {
+      modelAssetPath:
+        "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task",
+      delegate,
+    },
+    runningMode: "VIDEO",
+    numHands: 2,
+  });
+  try {
+    return await HandLandmarker.createFromOptions(vision, opts("GPU"));
+  } catch {
+    return await HandLandmarker.createFromOptions(vision, opts("CPU"));
+  }
+})();
+
+startBtn.addEventListener("click", async () => {
+  startBtn.disabled = true;
+  startBtn.textContent = "準備中……";
+  errorEl.style.display = "none";
+  try {
+    SFX.init();
+    if (SFX.ctx.state === "suspended") await SFX.ctx.resume();
+
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: "user", width: { ideal: 1280 }, height: { ideal: 720 } },
+      audio: false,
+    });
+    video.srcObject = stream;
+    await video.play();
+
+    startBtn.textContent = "呪文モデル読込中……";
+    handLandmarker = await landmarkerPromise;
+
+    startEl.style.display = "none";
+    hud.style.display = "block";
+    requestAnimationFrame(loop);
+  } catch (err) {
+    console.error(err);
+    if (err && (err.name === "NotAllowedError" || err.name === "NotFoundError")) {
+      showError(
+        "カメラにアクセスできませんでした。ブラウザのカメラ許可を確認してください。<br>" +
+        "<code>file://</code> で開いていて動かない場合は、このフォルダで " +
+        "<code>python3 -m http.server 8765</code> を実行し、" +
+        "<code>http://localhost:8765</code> を開いてください。"
+      );
+    } else {
+      showError(
+        "初期化に失敗しました：" + (err && err.message ? err.message : err) +
+        "<br>手検出モデルの読み込みにはインターネット接続が必要です。"
+      );
+    }
+  }
+});
+</script>
+</body>
+</html>
